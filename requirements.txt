@@ -1,0 +1,9 @@
+aiogram>=3.13,<4
+SQLAlchemy[asyncio]>=2.0.30,<3
+asyncmy>=0.2.9
+PyMySQL>=1.1
+cryptography>=42
+alembic>=1.13,<2
+pydantic>=2.7,<3
+# ویندوز پایگاه داده منطقه‌های زمانی ندارد (برنامه بدون آن هم با وقت تهران کار می‌کند)
+tzdata>=2024.1; sys_platform == "win32"
