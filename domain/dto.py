@@ -61,8 +61,11 @@ class ModerationSettings:
     """تنظیمات مدیریتی هر گروه (از ستون‌های group_settings خوانده می‌شود).
 
     warn_limit: با رسیدن اخطارهای فعال به این عدد، کاربر موقتاً بی‌صدا می‌شود (۰ = خاموش).
+    default_ban_seconds: مسدودی بدون ذکر مدت، این‌قدر طول می‌کشد و بعد کاربر
+        می‌تواند برگردد (پیش‌فرض ۵ ساعت). مسدودی دائمی فقط با نوشتن «دائمی» است.
     """
 
     confirm_sensitive_actions: bool = True
     warn_limit: int = 3
     warn_mute_seconds: int = 86400
+    default_ban_seconds: int = 5 * 3600

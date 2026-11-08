@@ -39,6 +39,8 @@ logger = logging.getLogger(__name__)
 # چرخه مقادیر تنظیمات با هر بار زدن دکمه.
 WARN_LIMIT_CYCLE = (3, 5, 10, 0)
 WARN_MUTE_CYCLE = (3600, 21600, 86400, 604800)
+# مدت مسدودی موقت (بازگشت خودکار کاربر): ۱ ساعت، ۵ ساعت، ۱۲ ساعت، ۱ روز، ۳ روز
+BAN_RETURN_CYCLE = (3600, 18000, 43200, 86400, 259200)
 
 
 def _display(user: User) -> str:
@@ -93,12 +95,14 @@ async def _settings_view(session: AsyncSession, group: Group) -> tuple[str, Inli
     settings = await groups.moderation_settings(group.id)
     daily = await groups.daily_report_enabled(group.id)
     mute_label = duration_label(settings.warn_mute_seconds)
+    ban_label = duration_label(settings.default_ban_seconds)
     text = texts_fa.panel_settings(
         title=group.title,
         daily_report=daily,
         warn_limit=settings.warn_limit,
         warn_mute_label=mute_label,
         confirm_sensitive=settings.confirm_sensitive_actions,
+        ban_return_label=ban_label,
     )
     return text, keyboards.settings_keyboard(
         group.id,
@@ -106,6 +110,7 @@ async def _settings_view(session: AsyncSession, group: Group) -> tuple[str, Inli
         warn_limit=settings.warn_limit,
         warn_mute_label=mute_label,
         confirm_sensitive=settings.confirm_sensitive_actions,
+        ban_return_label=ban_label,
     )
 
 
@@ -340,6 +345,10 @@ async def _toggle(session: AsyncSession, group: Group, key: str) -> None:
     elif key == "warnmute":
         await groups.set_warn_settings(
             group.id, warn_mute_seconds=_next_value(WARN_MUTE_CYCLE, settings.warn_mute_seconds)
+        )
+    elif key == "banreturn":
+        await groups.set_default_ban_seconds(
+            group.id, _next_value(BAN_RETURN_CYCLE, settings.default_ban_seconds)
         )
 
 

@@ -128,3 +128,20 @@ class RestrictionRepository:
         )
         result = await self.session.execute(stmt)
         return int(result.rowcount or 0)
+
+    async def list_due(self, kind: str, group_id: int, limit: int = 200) -> list[Restriction]:
+        """محدودیت‌های فعالِ موقتی همین گروه که مدتشان تمام شده (برای آزادسازی خودکار)."""
+        now = utcnow()
+        stmt = (
+            select(Restriction)
+            .where(
+                Restriction.group_id == group_id,
+                Restriction.kind == kind,
+                Restriction.is_active.is_(True),
+                Restriction.until.is_not(None),
+                Restriction.until <= now,
+            )
+            .order_by(Restriction.until)
+            .limit(limit)
+        )
+        return list((await self.session.execute(stmt)).scalars())

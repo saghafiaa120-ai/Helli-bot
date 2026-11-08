@@ -20,6 +20,7 @@ from platforms.base import PlatformAdapter, PlatformError
 from platforms.telegram.mapping import chat_ref_from_group
 from services.group_service import GroupService
 from services.message_counter import MessageCounter
+from services.moderation_service import ModerationService
 from services.stats_service import RETENTION_DAYS, StatsService, flush_counter
 
 logger = logging.getLogger(__name__)
@@ -46,6 +47,7 @@ async def stats_jobs(
     while True:
         try:
             await flush_counter(session_factory, counter)
+            await release_expired_bans(session_factory, adapter)
             now = tehran_now()
             await _send_daily_reports(session_factory, adapter, now)
             last_housekeeping = await _housekeeping(session_factory, now, last_housekeeping)
@@ -54,6 +56,36 @@ async def stats_jobs(
         except Exception:
             logger.exception("Stats background job failed")
         await asyncio.sleep(_seconds_to_next_minute())
+
+
+async def release_expired_bans(
+    session_factory: async_sessionmaker[AsyncSession], adapter: PlatformAdapter
+) -> int:
+    """مسدودی‌های موقتی که مدتشان تمام شده را برمی‌دارد و در گروه اعلام می‌کند.
+
+    هر دقیقه اجرا می‌شود؛ مسدودی دائمی هرگز این‌جا برداشته نمی‌شود.
+    """
+    released_total = 0
+    async with session_factory() as session:
+        service = ModerationService(session, adapter)
+        for group in await GroupService(session).active_groups():
+            chat = chat_ref_from_group(group)
+            released = await service.release_expired_bans(group, chat)
+            for user in released:
+                name = texts_fa.display_name(
+                    user.first_name, user.last_name, user.username, user.external_id
+                )
+                try:
+                    await adapter.send_text(
+                        chat, texts_fa.ban_released(texts_fa.user_link(user.external_id, name))
+                    )
+                except PlatformError as exc:
+                    logger.warning("Could not announce ban release in %s: %s", chat.external_id, exc)
+            released_total += len(released)
+        await session.commit()
+    if released_total:
+        logger.info("Released %s expired bans", released_total)
+    return released_total
 
 
 async def _send_daily_reports(

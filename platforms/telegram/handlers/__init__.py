@@ -1,6 +1,7 @@
 from aiogram import Router
 
 from platforms.telegram.handlers import (
+    games,
     group_events,
     help,
     moderation,
@@ -23,5 +24,6 @@ def get_routers() -> list[Router]:
         panel.build_router(),
         moderation.build_router(),
         stats.build_router(),
+        games.build_router(),
         group_events.build_router(),
     ]

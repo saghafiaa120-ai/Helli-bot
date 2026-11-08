@@ -105,6 +105,7 @@ def settings_keyboard(
     warn_limit: int,
     warn_mute_label: str | None,
     confirm_sensitive: bool,
+    ban_return_label: str | None = None,
 ) -> InlineKeyboardMarkup:
     limit = fa_digits(str(warn_limit)) if warn_limit else "بدون سقف"
     rows = [
@@ -119,6 +120,12 @@ def settings_keyboard(
             _button(
                 f"{texts_fa.BTN_SETTING_WARN_MUTE}: {warn_mute_label or 'دائمی'}",
                 f"panel:toggle:{group_id}:warnmute",
+            )
+        ],
+        [
+            _button(
+                f"{texts_fa.BTN_SETTING_BAN_RETURN}: {ban_return_label or '—'}",
+                f"panel:toggle:{group_id}:banreturn",
             )
         ],
         [

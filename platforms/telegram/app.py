@@ -22,6 +22,7 @@ from platforms.telegram.jobs import stats_jobs
 from platforms.telegram.middlewares.db_session import DbSessionMiddleware
 from platforms.telegram.middlewares.tracking import TrackingMiddleware
 from platforms.telegram.resilience import is_transient
+from services.games.base import GameRegistry
 from services.message_counter import MessageCounter
 from services.stats_service import flush_counter
 
@@ -58,10 +59,17 @@ def build_dispatcher(
     settings: Settings,
     counter: MessageCounter,
     pending: PendingConfirmations,
+    games: GameRegistry | None = None,
 ) -> Dispatcher:
     # آنچه به Dispatcher داده می‌شود، با همین نام‌ها در handlerها در دسترس است.
     # `config` تنظیمات برنامه است (نه تنظیمات گروه) تا نام `settings` آزاد بماند.
-    dp = Dispatcher(adapter=adapter, config=settings, counter=counter, pending=pending)
+    dp = Dispatcher(
+        adapter=adapter,
+        config=settings,
+        counter=counter,
+        pending=pending,
+        games=games if games is not None else GameRegistry(),
+    )
     # نشست دیتابیس برای همه انواع رویداد؛ ثبت فعالیت و شمارش فقط برای پیام‌ها.
     # Outer middleware است تا حتی بدون handler مطابق هم اجرا شود.
     dp.update.outer_middleware(DbSessionMiddleware(session_factory))

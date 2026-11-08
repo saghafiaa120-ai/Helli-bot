@@ -153,7 +153,10 @@ async def on_target_command(
             return
 
         if name == "ban":
-            if args.is_permanent and ctx.settings.confirm_sensitive_actions:
+            # بدون ذکر مدت، مسدودی موقت گروه (پیش‌فرض ۵ ساعت) اعمال می‌شود تا کاربر
+            # بعد از آن بتواند برگردد. مسدودی دائمی فقط با نوشتن «دائمی» است.
+            duration = args.duration if args.duration_given else ctx.settings.default_ban_seconds
+            if duration is None and ctx.settings.confirm_sensitive_actions:
                 item = pending.create(
                     kind="ban",
                     group_external_id=ctx.chat.external_id,
@@ -172,7 +175,7 @@ async def on_target_command(
                 chat=ctx.chat,
                 actor=ctx.actor,
                 target=target,
-                duration_seconds=args.duration,
+                duration_seconds=duration,
                 reason=args.reason,
             )
             await message.answer(

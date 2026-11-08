@@ -52,6 +52,8 @@ class ModerationActionType(str, Enum):
     KICK = "kick"
     WARN = "warn"
     UNWARN = "unwarn"
+    # پایان خودکار مدت مسدودی موقت (بدون دخالت مدیر)
+    AUTO_UNBAN = "auto_unban"
 
 
 class EndReason(str, Enum):

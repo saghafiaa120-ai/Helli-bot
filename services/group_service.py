@@ -15,6 +15,12 @@ logger = logging.getLogger(__name__)
 
 SETTING_DAILY_REPORT = "daily_report"
 SETTING_LAST_DAILY_REPORT = "last_daily_report"
+SETTING_BAN_SECONDS = "default_ban_seconds"
+
+# مسدودی موقت پیش‌فرض: ۵ ساعت. پس از آن کاربر می‌تواند دوباره عضو شود.
+DEFAULT_BAN_SECONDS = 5 * 3600
+MIN_BAN_SECONDS = 30 * 60
+MAX_BAN_SECONDS = 366 * 86400
 
 
 def _as_int(value: object, default: int, low: int, high: int) -> int:
@@ -142,6 +148,12 @@ class GroupService:
             confirm_sensitive_actions=bool(row.confirm_sensitive_actions),
             warn_limit=_as_int(raw.get("warn_limit"), 3, 0, 50),
             warn_mute_seconds=_as_int(raw.get("warn_mute_seconds"), 86400, 30, 366 * 86400),
+            default_ban_seconds=_as_int(
+                raw.get(SETTING_BAN_SECONDS),
+                DEFAULT_BAN_SECONDS,
+                MIN_BAN_SECONDS,
+                MAX_BAN_SECONDS,
+            ),
         )
 
     async def daily_report_enabled(self, group_id: int) -> bool:
@@ -179,6 +191,13 @@ class GroupService:
             changes["warn_mute_seconds"] = _as_int(warn_mute_seconds, 86400, 30, 366 * 86400)
         if changes:
             await self._update_settings(group_id, changes)
+
+    async def set_default_ban_seconds(self, group_id: int, seconds: int) -> None:
+        """مدت مسدودی موقت پیش‌فرض گروه را تغییر می‌دهد."""
+        await self._update_settings(
+            group_id,
+            {SETTING_BAN_SECONDS: _as_int(seconds, DEFAULT_BAN_SECONDS, MIN_BAN_SECONDS, MAX_BAN_SECONDS)},
+        )
 
     async def _settings_row(self, group_id: int) -> GroupSettings:
         row = await self._session.get(GroupSettings, group_id)

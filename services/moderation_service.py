@@ -36,6 +36,8 @@ from services.admin_service import AdminService
 logger = logging.getLogger(__name__)
 
 AUTO_MUTE_REASON = "رسیدن اخطارها به سقف"
+AUTO_UNBAN_REASON = "پایان مدت مسدودی موقت"
+PERMANENT_BAN_REASON = "مسدودی دائمی (بازگشت مسدود)"
 
 
 class ModerationError(Exception):
@@ -213,6 +215,61 @@ class ModerationService:
         if lifted or ended:
             await self._record(group, actor, target, ModerationActionType.UNBAN)
         return bool(lifted or ended)
+
+    # ----- آزادسازی خودکار و مسدودی دائمی ---------------------------------------
+
+    async def release_expired_bans(self, group: Group, chat: ChatRef) -> list[User]:
+        """مسدودی‌های موقتی که مدتشان تمام شده را برمی‌دارد تا کاربر بتواند برگردد.
+
+        خروجی: کاربرانی که آزاد شدند (برای اعلام در گروه).
+        """
+        released: list[User] = []
+        for row in await self._restrictions.list_due(RestrictionType.BAN.value, group.id):
+            target = await self._session.get(User, row.user_id)
+            await self._restrictions.end(row, EndReason.EXPIRED.value)
+            if target is None:
+                continue
+            try:
+                await self._adapter.unban_member(chat, target.external_id)
+            except PlatformError as exc:
+                # کاربر ممکن است دیگر عضو نباشد؛ بقیه خطاها فقط لاگ می‌شوند.
+                if exc.kind != "not_found":
+                    logger.warning("Auto unban failed for %s: %s", target.external_id, exc)
+            await self._actions.add(
+                ModerationActionType.AUTO_UNBAN.value,
+                group_id=group.id,
+                target_user_id=target.id,
+                reason=AUTO_UNBAN_REASON,
+            )
+            released.append(target)
+        return released
+
+    async def enforce_permanent_ban(
+        self, group: Group, chat: ChatRef, target: User
+    ) -> bool:
+        """اگر کاربر مسدودی دائمی فعال دارد، هنگام تلاش برای بازگشت دوباره مسدود می‌شود.
+
+        مسدودی دائمی هرگز خودبه‌خود برداشته نمی‌شود؛ فقط `/unban` آن را لغو می‌کند.
+        """
+        active = await self._restrictions.get_active(
+            group.id, target.id, RestrictionType.BAN.value
+        )
+        if active is None or active.until is not None:
+            return False
+        try:
+            await self._adapter.ban_member(chat, target.external_id, None)
+        except PlatformError as exc:
+            logger.warning(
+                "Could not re-apply permanent ban for %s: %s", target.external_id, exc
+            )
+            return False
+        await self._actions.add(
+            ModerationActionType.BAN.value,
+            group_id=group.id,
+            target_user_id=target.id,
+            reason=PERMANENT_BAN_REASON,
+        )
+        return True
 
     async def mute(
         self,

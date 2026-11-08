@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytest
 
@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine  # no
 
 import database.models  # noqa: E402,F401
 from core.enums import HelliRole  # noqa: E402
+from core.timeutils import utcnow  # noqa: E402
 from database.base import Base  # noqa: E402
 from database.models import (  # noqa: E402
     GroupAdmin,
@@ -295,3 +296,67 @@ async def test_admin_sync_feeds_role_lookup(session):
         ],
     )
     assert await admins.get_role(group.id, actor.user.id) is HelliRole.OWNER
+
+
+async def test_temporary_ban_is_released_after_its_duration(session):
+    """مسدودی موقت پس از پایان مدت خودکار برداشته می‌شود و کاربر می‌تواند برگردد."""
+    group, actor, target = await _setup(session)
+    adapter = FakeAdapter()
+    service = ModerationService(session, adapter)
+    await service.ban(
+        group=group,
+        chat=CHAT,
+        actor=actor,
+        target=target,
+        duration_seconds=5 * 3600,
+        reason="تبلیغ",
+    )
+
+    restriction = (await session.execute(select(Restriction))).scalar_one()
+    restriction.until = utcnow() - timedelta(seconds=1)
+    await session.flush()
+
+    released = await service.release_expired_bans(group, CHAT)
+
+    assert [user.external_id for user in released] == [target.external_id]
+    assert ("unban", target.external_id, None) in adapter.calls
+    assert not restriction.is_active and restriction.end_reason == "expired"
+    actions = (await session.execute(select(ModerationAction))).scalars().all()
+    assert actions[-1].action == "auto_unban"
+
+
+async def test_permanent_ban_is_never_released_automatically(session):
+    group, actor, target = await _setup(session)
+    service = ModerationService(session, FakeAdapter())
+    await service.ban(
+        group=group, chat=CHAT, actor=actor, target=target, duration_seconds=None, reason=None
+    )
+
+    assert await service.release_expired_bans(group, CHAT) == []
+    restriction = (await session.execute(select(Restriction))).scalar_one()
+    assert restriction.is_active
+
+
+async def test_permanent_ban_blocks_rejoining(session):
+    """کاربری که مسدودی دائمی دارد، حتی با ورود دوباره اخراج می‌شود."""
+    group, actor, target = await _setup(session)
+    adapter = FakeAdapter()
+    service = ModerationService(session, adapter)
+    await service.ban(
+        group=group, chat=CHAT, actor=actor, target=target, duration_seconds=None, reason=None
+    )
+    adapter.banned.clear()  # شبیه‌سازی رفع مسدودی از منوی تلگرام
+
+    assert await service.enforce_permanent_ban(group, CHAT, target) is True
+    assert ("ban", target.external_id, None) in adapter.calls
+    assert target.external_id in adapter.banned
+
+
+async def test_temporary_ban_does_not_block_rejoining(session):
+    group, actor, target = await _setup(session)
+    adapter = FakeAdapter()
+    service = ModerationService(session, adapter)
+    await service.ban(
+        group=group, chat=CHAT, actor=actor, target=target, duration_seconds=3600, reason=None
+    )
+    assert await service.enforce_permanent_ban(group, CHAT, target) is False

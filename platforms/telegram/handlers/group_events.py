@@ -9,6 +9,7 @@ from aiogram.types import ChatMemberUpdated, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core import texts_fa
+from core.enums import MemberStatus
 from platforms.base import PlatformAdapter, PlatformError
 from platforms.telegram.mapping import (
     GROUP_CHAT_TYPES,
@@ -67,9 +68,32 @@ async def on_member_status_changed(
     chat = chat_ref_from(event.chat)
     group, created = await GroupService(session).ensure(chat)
     user = await UserService(session).upsert(user_ref_from(member.user))
-    await MembershipService(session).set_status(group.id, user.id, member_status_from(member))
+    status = member_status_from(member)
+    moderation = ModerationService(session, adapter)
+
+    # مسدودی دائمی: کاربر حتی اگر راهی برای ورود پیدا کند، بلافاصله اخراج می‌شود.
+    if status == MemberStatus.MEMBER.value and await moderation.enforce_permanent_ban(
+        group, chat, user
+    ):
+        try:
+            await adapter.send_text(
+                chat,
+                texts_fa.permanent_ban_blocked(
+                    texts_fa.user_link(
+                        user.external_id,
+                        texts_fa.display_name(
+                            user.first_name, user.last_name, user.username, user.external_id
+                        ),
+                    )
+                ),
+            )
+        except PlatformError as exc:
+            logger.warning("Could not report permanent ban in %s: %s", chat.external_id, exc)
+        return
+
+    await MembershipService(session).set_status(group.id, user.id, status)
     # اگر مدیری از منوی خود تلگرام کسی را آزاد/محدود کرده، محدودیت‌های ثبت‌شده را هم‌گام کن.
-    await ModerationService(session, adapter).sync_external(group.id, user.id, status_value(member))
+    await moderation.sync_external(group.id, user.id, status_value(member))
 
     admin_change = {status_value(event.old_chat_member), status_value(member)} & _ADMIN_STATUSES
     if created or admin_change:

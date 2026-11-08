@@ -229,12 +229,28 @@ async def test_ban_command_with_duration_bans_user(env):
     assert "تبلیغ" in text
 
 
-async def test_permanent_ban_asks_for_confirmation(env):
+async def test_ban_without_duration_is_temporary_by_default(env):
+    """مسدودی بدون مدت، موقت است (پیش‌فرض ۵ ساعت) و کاربر بعد از آن برمی‌گردد."""
     dp, bot, fake, factory = env
     await _make_admin(factory)
 
     await dp.feed_update(
         bot, _update("/ban 222222", chat_id=GROUP_ID, chat_type="supergroup")
+    )
+
+    text = fake.sent[-1].text
+    assert "مسدود شد" in text
+    assert "۵ ساعت" in text
+    assert "می‌تواند دوباره عضو شود" in text
+    assert fake.sent[-1].reply_markup is None
+
+
+async def test_permanent_ban_asks_for_confirmation(env):
+    dp, bot, fake, factory = env
+    await _make_admin(factory)
+
+    await dp.feed_update(
+        bot, _update("/ban 222222 دائمی", chat_id=GROUP_ID, chat_type="supergroup")
     )
 
     text = fake.sent[-1].text
@@ -324,3 +340,32 @@ async def test_help_section_callback_edits_message(env):
     assert fake.edited, "بخش راهنما باید همان پیام را ویرایش کند"
     assert "مدیریت کاربران" in fake.edited[-1].text
     assert fake.answered >= 1
+
+
+async def test_ban_return_setting_cycles_through_durations(env):
+    """دکمه «⏱ مسدودی موقت» مدت مسدودی پیش‌فرض گروه را تغییر می‌دهد."""
+    dp, bot, fake, factory = env
+    group_id = await _make_admin(factory)
+
+    await dp.feed_update(
+        bot,
+        Update(
+            update_id=4,
+            callback_query={
+                "id": "cb3",
+                "chat_instance": "1",
+                "from": {"id": ADMIN_ID, "is_bot": False, "first_name": "مدیر"},
+                "data": f"panel:toggle:{group_id}:banreturn",
+                "message": {
+                    "message_id": 7,
+                    "date": int(NOW.timestamp()),
+                    "chat": {"id": GROUP_ID, "type": "supergroup", "title": "گروه پنل"},
+                    "text": "x",
+                },
+            },
+        ),
+    )
+
+    assert fake.edited, "پس از تغییر تنظیم، پنل دوباره رندر می‌شود"
+    # ۵ ساعت (پیش‌فرض) → ۱۲ ساعت
+    assert "۱۲ ساعت" in fake.edited[-1].text
